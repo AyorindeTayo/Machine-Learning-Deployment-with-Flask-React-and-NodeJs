@@ -3,6 +3,9 @@
   "version": "0.1.0",
   "private": true,
   "proxy": "http://localhost:5050",
+  "engines": {
+    "node": "26.x"
+  },
   "dependencies": {
     "react": "^17.0.2",
     "react-dom": "^17.0.2",
