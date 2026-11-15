@@ -1,6 +1,10 @@
 import { useState } from 'react';
 import './Form.css';
 
+// Same-origin Vercel function by default; override with REACT_APP_API_URL
+// if the Flask API is hosted somewhere else.
+const API_URL = process.env.REACT_APP_API_URL || '/api/predict';
+
 function Form() {
    const [form, setForm] = useState({
       pregnancies: "",
@@ -19,27 +23,35 @@ function Form() {
    const handleSubmit = (event) => {
       event.preventDefault();
 
-      const form_data = new FormData();
-      form_data.append("1", form.pregnancies);
-      form_data.append("2", form.glucose);
-      form_data.append("3", form.blood_presure);
-      form_data.append("4", form.skin_thickness);
-      form_data.append("5", form.insulin_level);
-      form_data.append("6", form.bmi);
-      form_data.append("7", form.diabetes_pedigree);
-      form_data.append("8", form.age);
+      const payload = {
+         pregnancies: form.pregnancies,
+         glucose: form.glucose,
+         blood_pressure: form.blood_presure,
+         skin_thickness: form.skin_thickness,
+         insulin: form.insulin_level,
+         bmi: form.bmi,
+         diabetes_pedigree: form.diabetes_pedigree,
+         age: form.age
+      };
 
       setLoading(true);
+      setResult("");
 
-      fetch('https://dsmodeldeployment1.herokuapp.com/predict', {
+      fetch(API_URL, {
          method: 'POST',
-         body: form_data
+         headers: { 'Content-Type': 'application/json' },
+         body: JSON.stringify(payload)
       })
-         .then(response => response.text())
-         .then(html => {
-            setResult(html);
-            setLoading(false);
+         .then(async response => {
+            const data = await response.json().catch(() => ({}));
+            if (!response.ok) throw new Error(data.error || `Server error (${response.status})`);
+            const pct = (data.probability * 100).toFixed(1);
+            setResult(data.prediction === 1
+               ? `High risk of diabetes (probability ${pct}%)`
+               : `Low risk of diabetes (probability ${pct}%)`);
          })
+         .catch(err => setResult(`Could not get a prediction: ${err.message}`))
+         .finally(() => setLoading(false));
    };
 
    const onChange = (event) => {
@@ -78,7 +90,7 @@ function Form() {
          <button type="submit" disabled={loading}>{loading ? "Predicting Result..." : "Submit Form"}</button>
          {result && <span onClick={handleClear}>Clear Prediction</span>}
 
-         {result && <div dangerouslySetInnerHTML={{ __html: result }} className="result" />}
+         {result && <div className="result">{result}</div>}
       </form>
    );
 }
