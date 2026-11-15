@@ -1,0 +1,7 @@
+{
+  "functions": {
+    "api/predict.py": {
+      "excludeFiles": "{node_modules/**,src/**,public/**,model/**,build/**,.git/**}"
+    }
+  }
+}

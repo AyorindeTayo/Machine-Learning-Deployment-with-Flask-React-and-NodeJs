@@ -2,7 +2,11 @@
 
 On Vercel this file is deployed as a serverless function at /api/predict.
 Locally:  python api/predict.py   (listens on http://localhost:5050)
+
+model.pkl holds the trained logistic-regression parameters (see
+model/train.py), so prediction is plain Python with no scikit-learn needed.
 """
+import math
 import os
 import pickle
 from pathlib import Path
@@ -10,10 +14,20 @@ from pathlib import Path
 from flask import Flask, jsonify, request
 
 with open(Path(__file__).resolve().parent / "model.pkl", "rb") as f:
-    bundle = pickle.load(f)
-MODEL = bundle["model"]
-FEATURES = bundle["features"]
-ZERO_MEANS_MISSING = {"glucose", "blood_pressure", "skin_thickness", "insulin", "bmi"}
+    PARAMS = pickle.load(f)
+FEATURES = PARAMS["features"]
+ZERO_MEANS_MISSING = set(PARAMS["zero_means_missing"])
+
+
+def predict_proba(row):
+    """Median-impute -> standard-scale -> logistic regression."""
+    z = PARAMS["intercept"]
+    for i, (name, v) in enumerate(zip(FEATURES, row)):
+        if v == 0 and name in ZERO_MEANS_MISSING:  # 0 means "not measured"
+            v = PARAMS["medians"][i]
+        z += PARAMS["coef"][i] * (v - PARAMS["means"][i]) / PARAMS["scales"][i]
+    return 1.0 / (1.0 + math.exp(-z))
+
 
 app = Flask(__name__)
 
@@ -37,7 +51,7 @@ def index():
 
 @app.route("/api/predict", methods=["GET"])
 def health():
-    return jsonify(status="ok", model=bundle["name"], features=FEATURES)
+    return jsonify(status="ok", model=PARAMS["name"], features=FEATURES)
 
 
 @app.route("/api/predict", methods=["POST", "OPTIONS"])
@@ -52,13 +66,10 @@ def predict():
         return jsonify(error=f"Missing field: {e.args[0]}"), 400
     except (TypeError, ValueError):
         return jsonify(error="All fields must be numbers"), 400
+    if not all(math.isfinite(v) for v in row):
+        return jsonify(error="All fields must be finite numbers"), 400
 
-    # Match training: 0 in these columns means "not measured" -> imputed.
-    row = [
-        float("nan") if (v == 0 and name in ZERO_MEANS_MISSING) else v
-        for name, v in zip(FEATURES, row)
-    ]
-    probability = float(MODEL.predict_proba([row])[0][1])
+    probability = predict_proba(row)
     return jsonify(
         prediction=int(probability >= 0.5),
         probability=round(probability, 4),
